@@ -1,88 +1,141 @@
-/**
- * NEVHub backend — Google Apps Script + Google Sheets.
- * Deploy as Web app: Execute as Me; access Anyone.
- * Configure Script Properties before public deployment:
- * SPREADSHEET_ID, ADMIN_EMAIL, ADMIN_PASSWORD_HASH, SESSION_SECRET
- * ADMIN_PASSWORD_HASH = SHA-256 hex of "your-admin-password|SESSION_SECRET"
+/*
+ * NEVHub Google Apps Script backend
+ * Setup: run setup() once, then create admin with createAdmin(email, password, name).
+ * Deploy as Web App, execute as owner, access: Anyone.
+ * NOTE: prototype auth uses SHA-256 password hashes and short-lived bearer tokens in ScriptProperties.
+ * For production, review security/privacy requirements before handling real student IDs/payment evidence.
  */
-const SHEETS = {
-  Users: ['id','name','nim','kelas','prodi','angkatan','email','passwordHash','createdAt'],
-  Events: ['id','title','type','description','date','deadline','quota','fee','waLink','status','fields','createdAt'],
-  Applications: ['id','eventId','eventTitle','nim','name','email','answers','fileUrls','feeStatus','status','reviewNote','letterUrl','waLink','createdAt','reviewedAt']
+const CFG={SHEET_ID:"",UPLOAD_FOLDER_ID:"",ADMIN_EMAILS:[],TOKEN_TTL_HOURS:12,MAX_FILE_BYTES:1024*1024};
+const SHEETS={
+ Users:["id","createdAt","name","nim","kelas","prodi","angkatan","google","passwordHash","active"],
+ Admins:["id","createdAt","name","email","passwordHash","active"],
+ Events:["id","createdAt","updatedAt","title","type","date","deadline","location","quota","fee","wa","description","requirements","reqReason","reqPhoto","reqPayment","reqPortfolio","documentLabel","status","createdBy"],
+ Applications:["id","createdAt","updatedAt","eventId","nim","name","email","reason","portfolio","extra","photoFileId","photoFileName","paymentFileId","paymentFileName","status","note","decidedBy","decisionAt","letterNo"],
+ Attendance:["id","createdAt","eventId","applicationId","nim","name","checkInAt","method","checkedBy"],
+ Settings:["key","value"]
 };
-function doGet(){return json_({ok:true,service:'NEVHub API',message:'API berjalan. Gunakan aplikasi web untuk mengakses data.'});}
-function doPost(e){
-  try{
-    const p=JSON.parse((e.postData&&e.postData.contents)||'{}');
-    const action=p.action;
-    if(action==='register')return json_(register_(p));
-    if(action==='login')return json_(login_(p));
-    if(action==='listEvents')return json_({ok:true,events:rows_('Events').filter(x=>x.status==='Aktif')});
-    if(action==='myApplications'){requireUser_(p);return json_({ok:true,applications:rows_('Applications').filter(x=>x.nim===String(p.nim)).map(publicApp_)});}
-    if(action==='apply')return json_(apply_(p));
-    if(action==='adminLogin')return json_(adminLogin_(p));
-    if(action==='adminData'){requireAdmin_(p);return json_({ok:true,data:{events:rows_('Events'),users:rows_('Users').map(publicUser_),applications:rows_('Applications').map(publicApp_)}});}
-    if(action==='saveEvent'){requireAdmin_(p);return json_(saveEvent_(p.event||{}));}
-    if(action==='reviewApplication'){requireAdmin_(p);return json_(reviewApplication_(p));}
-    return json_({ok:false,message:'Aksi tidak dikenal.'});
-  }catch(err){return json_({ok:false,message:err.message||'Terjadi kesalahan.'});}
+function setup(){
+ const props=PropertiesService.getScriptProperties();
+ let ssId=CFG.SHEET_ID||props.getProperty("SHEET_ID");
+ if(!ssId){const ss=SpreadsheetApp.create("NEVHub Database");ssId=ss.getId();props.setProperty("SHEET_ID",ssId);}
+ const ss=SpreadsheetApp.openById(ssId);
+ Object.keys(SHEETS).forEach(name=>{let sh=ss.getSheetByName(name)||ss.insertSheet(name);if(sh.getLastRow()===0)sh.appendRow(SHEETS[name]);sh.setFrozenRows(1);});
+ let folderId=CFG.UPLOAD_FOLDER_ID||props.getProperty("UPLOAD_FOLDER_ID");
+ if(!folderId){const folder=DriveApp.createFolder("NEVHub Private Uploads");folderId=folder.getId();props.setProperty("UPLOAD_FOLDER_ID",folderId);}
+ Logger.log("Spreadsheet URL: "+ss.getUrl());
+ Logger.log("Upload folder ID: "+folderId);
+ return {spreadsheetUrl:ss.getUrl(),uploadFolderId:folderId};
 }
-function db_(){const id=PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');if(!id)throw Error('SPREADSHEET_ID belum diatur di Script Properties.');return SpreadsheetApp.openById(id);}
-function setupDatabase(){const ss=db_();Object.keys(SHEETS).forEach(n=>{let sh=ss.getSheetByName(n)||ss.insertSheet(n);if(sh.getLastRow()===0)sh.appendRow(SHEETS[n]);sh.setFrozenRows(1);});}
-function sheet_(name){const ss=db_();let sh=ss.getSheetByName(name);if(!sh){sh=ss.insertSheet(name);sh.appendRow(SHEETS[name]);}return sh;}
-function rows_(name){const sh=sheet_(name),v=sh.getDataRange().getValues();if(v.length<2)return [];const headers=v[0].map(String);return v.slice(1).filter(r=>r.some(c=>c!=='')).map(r=>{let o={};headers.forEach((h,i)=>o[h]=r[i] instanceof Date?r[i].toISOString():String(r[i]??''));return o;});}
-function addRow_(name,obj){const sh=sheet_(name),headers=SHEETS[name];sh.appendRow(headers.map(h=>obj[h]===undefined?'':obj[h]));}
-function updateRow_(name,id,obj){const sh=sheet_(name),v=sh.getDataRange().getValues(),headers=v[0].map(String),idx=headers.indexOf('id');for(let i=1;i<v.length;i++){if(String(v[i][idx])===String(id)){headers.forEach((h,j)=>{if(obj[h]!==undefined)sh.getRange(i+1,j+1).setValue(obj[h]);});return true;}}return false;}
-function uid_(){return Utilities.getUuid();}
-function prop_(k){return PropertiesService.getScriptProperties().getProperty(k)||'';}
-function sha_(s){return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,s,Utilities.Charset.UTF_8).map(b=>(b<0?b+256:b).toString(16).padStart(2,'0')).join('');}
-function passHash_(password){const salt=prop_('SESSION_SECRET');if(!salt)throw Error('SESSION_SECRET belum dikonfigurasi.');return sha_(password+'|'+salt);}
-function register_(p){
-  ['name','nim','kelas','prodi','angkatan','email','password'].forEach(k=>{if(!String(p[k]||'').trim())throw Error('Semua kolom pendaftaran wajib diisi.');});
-  if(String(p.password).length<8)throw Error('Password minimal 8 karakter.');
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email))throw Error('Format email tidak valid.');
-  if(rows_('Users').some(u=>u.nim===String(p.nim).trim()))throw Error('NIM sudah terdaftar.');
-  if(rows_('Users').some(u=>u.email.toLowerCase()===String(p.email).trim().toLowerCase()))throw Error('Email sudah terdaftar.');
-  addRow_('Users',{id:uid_(),name:String(p.name).trim(),nim:String(p.nim).trim(),kelas:String(p.kelas).trim(),prodi:String(p.prodi).trim(),angkatan:String(p.angkatan).trim(),email:String(p.email).trim(),passwordHash:passHash_(p.password),createdAt:new Date().toISOString()});
-  return {ok:true,message:'Akun dibuat. Silakan login.'};
+function createAdmin(email,password,name){
+ if(!email||!password||String(password).length<10)throw new Error("Email wajib dan password minimal 10 karakter.");
+ const sh=sheet_("Admins"),existing=rows_("Admins").some(x=>String(x.email).toLowerCase()===String(email).toLowerCase());
+ if(existing)throw new Error("Admin sudah ada.");
+ sh.appendRow([id_(),new Date(),name||"Admin",String(email).toLowerCase(),hash_(password),true]);
+ return "Admin dibuat: "+email;
 }
-function login_(p){const u=rows_('Users').find(x=>x.nim===String(p.nim||'').trim());if(!u||u.passwordHash!==passHash_(String(p.password||'')))throw Error('NIM atau password salah.');const token=uid_()+uid_();CacheService.getScriptCache().put('user:'+token,u.nim,21600);return {ok:true,token,user:{name:u.name,nim:u.nim,kelas:u.kelas,prodi:u.prodi,angkatan:u.angkatan,email:u.email,token:token}};}
-function requireUser_(p){if(!p.token||CacheService.getScriptCache().get('user:'+p.token)!==String(p.nim||''))throw Error('Sesi berakhir. Silakan login kembali.');}
-function adminLogin_(p){const email=prop_('ADMIN_EMAIL').toLowerCase(),hash=prop_('ADMIN_PASSWORD_HASH');if(!email||!hash)throw Error('ADMIN_EMAIL dan ADMIN_PASSWORD_HASH belum dikonfigurasi.');if(String(p.email||'').toLowerCase()!==email||passHash_(String(p.password||''))!==hash)throw Error('Email atau password admin salah.');const token=uid_()+uid_();CacheService.getScriptCache().put('admin:'+token,email,21600);return {ok:true,token};}
-function requireAdmin_(p){if(!p.token||!CacheService.getScriptCache().get('admin:'+p.token))throw Error('Sesi admin berakhir. Silakan login kembali.');}
-function publicUser_(u){const x={...u};delete x.passwordHash;return x;}
-function publicApp_(a){return a;}
-function saveEvent_(e){
-  if(!String(e.title||'').trim())throw Error('Nama kegiatan wajib diisi.');
-  const now=new Date().toISOString(),obj={id:e.id||uid_(),title:String(e.title),type:String(e.type||'Open Lab'),description:String(e.description||''),date:String(e.date||''),deadline:String(e.deadline||''),quota:String(e.quota||'0'),fee:String(e.fee||'0'),waLink:String(e.waLink||''),status:String(e.status||'Aktif'),fields:String(e.fields||'[]'),createdAt:e.createdAt||now};
-  if(e.id){if(!updateRow_('Events',e.id,obj))throw Error('Kegiatan tidak ditemukan.');}else addRow_('Events',obj);
-  return {ok:true,event:obj};
+function doGet(e){
+ const p=(e&&e.parameter)||{},callback=String(p.callback||"").replace(/[^\w.$]/g,"");
+ let result;
+ try{result=route_(p.action,p);}catch(err){result={ok:false,error:err.message||String(err)};}
+ const payload=JSON.stringify(result);
+ if(callback)return ContentService.createTextOutput(callback+"("+payload+");").setMimeType(ContentService.MimeType.JAVASCRIPT);
+ return ContentService.createTextOutput(payload).setMimeType(ContentService.MimeType.JSON);
 }
-function apply_(p){
-  requireUser_(p);const events=rows_('Events'),event=events.find(e=>e.id===p.eventId&&e.status==='Aktif');if(!event)throw Error('Kegiatan tidak tersedia.');
-  if(event.deadline&&new Date(event.deadline+'T23:59:59')<new Date())throw Error('Batas pendaftaran sudah lewat.');
-  const user=rows_('Users').find(u=>u.nim===String(p.nim));if(!user)throw Error('Akun mahasiswa tidak ditemukan.');
-  const apps=rows_('Applications');if(apps.some(a=>a.eventId===event.id&&a.nim===user.nim&&a.status!=='Ditolak'))throw Error('Anda sudah mendaftar kegiatan ini.');
-  if(Number(event.quota)>0&&apps.filter(a=>a.eventId===event.id&&a.status!=='Ditolak').length>=Number(event.quota))throw Error('Kuota kegiatan sudah penuh.');
-  const answers=p.answers||{},fileUrls={};Object.keys(answers).forEach(k=>{const a=answers[k];if(a&&a.data&&a.name){const bytes=Utilities.base64Decode(a.data);const blob=Utilities.newBlob(bytes,a.mimeType||'application/octet-stream',a.name);const folder=uploadFolder_();const file=folder.createFile(blob);file.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.VIEW);fileUrls[k]=file.getUrl();answers[k]={fileUrl:file.getUrl(),name:a.name};}});
-  addRow_('Applications',{id:uid_(),eventId:event.id,eventTitle:event.title,nim:user.nim,name:user.name,email:user.email,answers:JSON.stringify(answers),fileUrls:JSON.stringify(fileUrls),feeStatus:Number(event.fee)>0?'Belum diverifikasi':'Gratis',status:'Menunggu',reviewNote:'',letterUrl:'',waLink:'',createdAt:new Date().toISOString(),reviewedAt:''});
-  return {ok:true,message:'Pendaftaran berhasil dikirim.'};
+function route_(action,p){
+ if(action==="listEvents")return {ok:true,events:rows_("Events").filter(x=>x.status==="Published").map(publicEvent_)};
+ if(action==="getEvent"){const e=rows_("Events").find(x=>x.id===p.id&&x.status==="Published");if(!e)throw Error("Kegiatan tidak ditemukan.");return {ok:true,event:publicEvent_(e)};}
+ if(action==="registerUser")return registerUser_(p);
+ if(action==="loginUser")return loginUser_(p);
+ if(action==="myApplications"){const u=authUser_(p.token);return {ok:true,applications:rows_("Applications").filter(a=>a.nim===u.nim).map(applicationPublic_).reverse()};}
+ if(action==="adminLogin")return adminLogin_(p);
+ if(action==="adminDashboard"){authAdmin_(p.adminToken);return {ok:true,events:rows_("Events").map(publicEvent_),users:rows_("Users").map(userPublic_),applications:rows_("Applications").map(applicationAdmin_).reverse()};}
+ if(action==="saveEvent"){authAdmin_(p.adminToken);return saveEvent_(p);}
+ if(action==="deleteEvent"){authAdmin_(p.adminToken);return deleteEvent_(p.id);}
+ if(action==="decideApplication"){const a=authAdmin_(p.adminToken);return decide_(a,p);}
+ if(action==="apply"){const u=authUser_(p.token);return apply_(u,p);}
+ if(action==="attendanceCheckIn"){const u=authUser_(p.token);return checkIn_(u,p);}
+ if(action==="attendanceList"){authAdmin_(p.adminToken);return {ok:true,attendance:rows_("Attendance").filter(a=>!p.eventId||a.eventId===p.eventId)};}
+ throw Error("Aksi tidak dikenal.");
 }
-function uploadFolder_(){const id=prop_('UPLOAD_FOLDER_ID');if(id){try{return DriveApp.getFolderById(id);}catch(e){}}const name='NEVHub Private Uploads';const it=DriveApp.getFoldersByName(name);return it.hasNext()?it.next():DriveApp.createFolder(name);}
-function reviewApplication_(p){
-  const app=rows_('Applications').find(a=>a.id===p.applicationId);if(!app)throw Error('Pendaftaran tidak ditemukan.');
-  if(!['Disetujui','Ditolak','Menunggu'].includes(p.status))throw Error('Status tidak valid.');
-  const event=rows_('Events').find(e=>e.id===app.eventId)||{},now=new Date().toISOString();let letterUrl='',waLink=p.status==='Disetujui'?(event.waLink||''):'';
-  const update={status:p.status,reviewNote:String(p.note||''),reviewedAt:now,waLink:waLink};
-  if(p.status==='Disetujui'){
-    const html=`<div style="font-family:Arial,sans-serif;max-width:700px;margin:auto;border:1px solid #eee;padding:32px"><h1 style="color:#d71920">NEVHub</h1><h2>Surat Persetujuan Pendaftaran</h2><p>Halo ${escapeHtml_(app.name)},</p><p>Selamat! Pendaftaran Anda pada kegiatan <b>${escapeHtml_(app.eventTitle)}</b> telah disetujui.</p><p>Silakan simpan surat ini sebagai bukti persetujuan. Informasi lanjutan akan disampaikan oleh panitia.</p>${waLink?`<p><a href="${waLink}" style="display:inline-block;background:#d71920;color:white;padding:12px 18px;text-decoration:none;border-radius:8px">Gabung Grup WhatsApp</a></p>`:''}<p>Salam,<br>Panitia NEV</p></div>`;
-    const blob=Utilities.newBlob(html,'text/html','Surat-Persetujuan-NEVHub.html');const file=uploadFolder_().createFile(blob);file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);letterUrl=file.getUrl();update.letterUrl=letterUrl;
-  }
-  updateRow_('Applications',app.id,update);
-  const subject=(p.status==='Disetujui'?'Pendaftaran disetujui':'Pembaruan status pendaftaran')+' — '+app.eventTitle;
-  const body=p.status==='Disetujui'?`Halo ${app.name},\n\nPendaftaran Anda untuk ${app.eventTitle} telah disetujui.\nSurat persetujuan: ${letterUrl}\n${waLink?'Link grup WhatsApp: '+waLink:''}\n\nSalam,\nPanitia NEV`:`Halo ${app.name},\n\nStatus pendaftaran Anda untuk ${app.eventTitle}: ${p.status}.\n${p.note?'Catatan: '+p.note:''}\n\nSalam,\nPanitia NEV`;
-  try{MailApp.sendEmail({to:app.email,subject:subject,body:body,name:'NEVHub'});}catch(err){console.error('Email gagal: '+err.message);}
-  return {ok:true,letterUrl,waLink};
+function registerUser_(p){
+ const name=String(p.name||"").trim(),nim=String(p.nim||"").trim(),kelas=String(p.kelas||"").trim(),prodi=String(p.prodi||"").trim(),angkatan=String(p.angkatan||"").trim(),google=String(p.google||"").trim().toLowerCase(),password=String(p.password||"");
+ if(!name||!nim||!kelas||!prodi||!angkatan||!google||password.length<8)throw Error("Lengkapi semua data. Password minimal 8 karakter.");
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(google))throw Error("Email Google tidak valid.");
+ if(rows_("Users").some(u=>u.nim===nim))throw Error("NIM sudah terdaftar.");
+ const user={id:id_(),createdAt:new Date(),name,nim,kelas,prodi,angkatan,google,passwordHash:hash_(password),active:true};
+ append_("Users",user);return {ok:true,user:issueUserToken_(user)};
 }
-function escapeHtml_(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function json_(o){return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);}
+function loginUser_(p){
+ const nim=String(p.nim||"").trim(),pass=String(p.password||"");
+ const u=rows_("Users").find(x=>x.nim===nim&&x.passwordHash===hash_(pass)&&bool_(x.active));
+ if(!u)throw Error("NIM atau password salah.");
+ return {ok:true,user:issueUserToken_(u)};
+}
+function adminLogin_(p){
+ const email=String(p.email||"").toLowerCase().trim(),pass=String(p.password||"");
+ const a=rows_("Admins").find(x=>String(x.email).toLowerCase()===email&&x.passwordHash===hash_(pass)&&bool_(x.active));
+ if(!a)throw Error("Email atau password admin salah.");
+ const token=Utilities.getUuid()+Utilities.getUuid().replace(/-/g,"");
+ PropertiesService.getScriptProperties().setProperty("ADM_"+token,JSON.stringify({id:a.id,email:a.email,exp:Date.now()+CFG.TOKEN_TTL_HOURS*3600000}));
+ return {ok:true,admin:{name:a.name,email:a.email,token}};
+}
+function issueUserToken_(u){const token=Utilities.getUuid()+Utilities.getUuid().replace(/-/g,"");PropertiesService.getScriptProperties().setProperty("USR_"+token,JSON.stringify({id:u.id,nim:u.nim,exp:Date.now()+CFG.TOKEN_TTL_HOURS*3600000}));return {name:u.name,nim:u.nim,kelas:u.kelas,prodi:u.prodi,angkatan:u.angkatan,google:u.google,token};}
+function authUser_(token){const x=tokenData_("USR_",token);const u=rows_("Users").find(u=>u.id===x.id&&bool_(u.active));if(!u)throw Error("Akun tidak aktif.");return u;}
+function authAdmin_(token){const x=tokenData_("ADM_",token);const a=rows_("Admins").find(a=>a.id===x.id&&bool_(a.active));if(!a)throw Error("Akun admin tidak aktif.");return a;}
+function tokenData_(prefix,token){if(!token)throw Error("Silakan login kembali.");const props=PropertiesService.getScriptProperties(),raw=props.getProperty(prefix+token);if(!raw)throw Error("Sesi tidak valid, silakan login kembali.");const x=JSON.parse(raw);if(x.exp<Date.now()){props.deleteProperty(prefix+token);throw Error("Sesi kedaluwarsa, silakan login kembali.");}return x;}
+function saveEvent_(p){
+ const id=String(p.eventId||"").trim()||id_(),all=rows_("Events"),old=all.find(x=>x.id===id),admin=authAdmin_(p.adminToken);
+ const e={id,createdAt:old?old.createdAt:new Date(),updatedAt:new Date(),title:String(p.title||"").trim(),type:String(p.type||""),date:String(p.date||""),deadline:String(p.deadline||""),location:String(p.location||"").trim(),quota:Number(p.quota||0),fee:Number(p.fee||0),wa:String(p.wa||""),description:String(p.description||"").trim(),requirements:String(p.requirements||""),reqReason:bool_(p.reqReason),reqPhoto:bool_(p.reqPhoto),reqPayment:bool_(p.reqPayment),reqPortfolio:bool_(p.reqPortfolio),documentLabel:String(p.documentLabel||""),status:"Published",createdBy:admin.email};
+ if(!e.title||!e.date||!e.deadline||!e.location||e.quota<1)throw Error("Lengkapi nama, tanggal, deadline, lokasi, dan kuota.");
+ if(old)update_("Events","id",id,e);else append_("Events",e);return {ok:true,event:publicEvent_(e)};
+}
+function deleteEvent_(id){update_("Events","id",id,{status:"Archived",updatedAt:new Date()});return {ok:true};}
+function apply_(u,p){
+ const e=rows_("Events").find(x=>x.id===p.eventId&&x.status==="Published");if(!e)throw Error("Kegiatan tidak tersedia.");
+ if(e.deadline&&new Date(e.deadline+"T23:59:59")<new Date())throw Error("Pendaftaran sudah ditutup.");
+ if(rows_("Applications").some(a=>a.eventId===e.id&&a.nim===u.nim))throw Error("Anda sudah mendaftar kegiatan ini.");
+ if(rows_("Applications").filter(a=>a.eventId===e.id&&a.status!=="Ditolak").length>=Number(e.quota))throw Error("Kuota kegiatan sudah penuh.");
+ const docs=p.docs?JSON.parse(p.docs):{};
+ const photo=docs.photo?saveFile_(docs.photo,u.nim):null,payment=docs.payment?saveFile_(docs.payment,u.nim):null;
+ if(e.reqPhoto&&!photo)throw Error("Bukti foto/dokumen wajib diunggah.");
+ if(e.reqPayment&&!payment)throw Error("Bukti pembayaran wajib diunggah.");
+ if(e.reqReason&&!String(p.reason||"").trim())throw Error("Alasan pendaftaran wajib diisi.");
+ if(e.reqPortfolio&&!String(p.portfolio||"").trim())throw Error("Link portofolio wajib diisi.");
+ const a={id:id_(),createdAt:new Date(),updatedAt:new Date(),eventId:e.id,nim:u.nim,name:u.name,email:u.google,reason:String(p.reason||""),portfolio:String(p.portfolio||""),extra:String(p.extra||""),photoFileId:photo?photo.id:"",photoFileName:photo?photo.name:"",paymentFileId:payment?payment.id:"",paymentFileName:payment?payment.name:"",status:"Menunggu",note:"",decidedBy:"",decisionAt:"",letterNo:""};
+ append_("Applications",a);return {ok:true,id:a.id,status:a.status};
+}
+function saveFile_(f,nim){
+ if(!f||!f.data)return null;const bytes=Utilities.base64Decode(f.data),mime=String(f.type||"application/octet-stream"),name=String(f.name||"upload").replace(/[^\w.\-]/g,"_");
+ if(bytes.length>CFG.MAX_FILE_BYTES)throw Error("Ukuran file maksimal 1 MB.");
+ if(!["image/jpeg","image/png","image/webp","application/pdf"].includes(mime))throw Error("Tipe file hanya JPG, PNG, WEBP, atau PDF.");
+ const folderId=PropertiesService.getScriptProperties().getProperty("UPLOAD_FOLDER_ID");const folder=DriveApp.getFolderById(folderId);
+ const blob=Utilities.newBlob(bytes,mime,Date.now()+"_"+nim+"_"+name),file=folder.createFile(blob);file.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.NONE);return {id:file.getId(),name};
+}
+function decide_(admin,p){
+ const a=rows_("Applications").find(x=>x.id===p.id);if(!a)throw Error("Pendaftaran tidak ditemukan.");
+ if(!["Disetujui","Ditolak"].includes(p.status))throw Error("Status tidak valid.");
+ const e=rows_("Events").find(x=>x.id===a.eventId);const letterNo="NEV/"+new Date().getFullYear()+"/"+a.id.slice(-6).toUpperCase();
+ update_("Applications","id",a.id,{status:p.status,note:String(p.note||""),updatedAt:new Date(),decidedBy:admin.email,decisionAt:new Date(),letterNo:p.status==="Disetujui"?letterNo:""});
+ if(p.status==="Disetujui"){const wa=e?e.wa:"";const subject="Persetujuan pendaftaran NEVHub — "+(e?e.title:"Kegiatan NEV");const body="Halo "+a.name+",\n\nPendaftaran Anda pada kegiatan "+(e?e.title:"NEVHub")+" telah DISETUJUI.\nNomor surat: "+letterNo+"\nTanggal: "+(e?e.date:"")+"\nLokasi: "+(e?e.location:"")+"\n"+(wa?"Link grup WhatsApp: "+wa+"\n":"")+"\nSurat persetujuan juga dapat dilihat melalui portal NEVHub.\n\nSalam,\nAdmin NEVHub";
+   try{GmailApp.sendEmail(a.email,subject,body,{name:"NEVHub"});}catch(err){console.error("Gmail send failed: "+err.message);}
+ }
+ return {ok:true,status:p.status};
+}
+function checkIn_(u,p){
+ const a=rows_("Applications").find(x=>x.id===p.applicationId&&x.nim===u.nim&&x.status==="Disetujui");if(!a)throw Error("Peserta belum disetujui atau data tidak cocok.");
+ const e=rows_("Events").find(x=>x.id===a.eventId);if(!e)throw Error("Kegiatan tidak ditemukan.");
+ if(rows_("Attendance").some(x=>x.applicationId===a.id))throw Error("Presensi sudah tercatat.");
+ append_("Attendance",{id:id_(),createdAt:new Date(),eventId:e.id,applicationId:a.id,nim:u.nim,name:u.name,checkInAt:new Date(),method:"token",checkedBy:"self"});
+ return {ok:true,message:"Presensi berhasil dicatat."};
+}
+function publicEvent_(e){return {id:e.id,title:e.title,type:e.type,date:e.date,deadline:e.deadline,location:e.location,quota:e.quota,fee:e.fee,wa:e.wa,description:e.description,requirements:e.requirements,reqReason:bool_(e.reqReason),reqPhoto:bool_(e.reqPhoto),reqPayment:bool_(e.reqPayment),reqPortfolio:bool_(e.reqPortfolio),documentLabel:e.documentLabel,status:e.status};}
+function userPublic_(u){return {name:u.name,nim:u.nim,kelas:u.kelas,prodi:u.prodi,angkatan:u.angkatan,google:u.google,createdAt:u.createdAt};}
+function applicationPublic_(a){const e=rows_("Events").find(x=>x.id===a.eventId)||{};return {id:a.id,eventId:a.eventId,eventTitle:e.title||"Kegiatan",eventType:e.type||"",eventDate:e.date||"",location:e.location||"",wa:e.wa||"",created:a.createdAt,status:a.status,note:a.note,letterNo:a.letterNo};}
+function applicationAdmin_(a){const e=rows_("Events").find(x=>x.id===a.eventId)||{};return {id:a.id,eventId:a.eventId,eventTitle:e.title||"Kegiatan",eventType:e.type||"",eventDate:e.date||"",location:e.location||"",wa:e.wa||"",created:a.createdAt,status:a.status,note:a.note,letterNo:a.letterNo,name:a.name,nim:a.nim,email:a.email,reason:a.reason,portfolio:a.portfolio,extra:a.extra,documentNames:[a.photoFileName,a.paymentFileName].filter(Boolean).join(" · "),photoFileId:a.photoFileId,paymentFileId:a.paymentFileId};}
+function sheet_(name){const id=PropertiesService.getScriptProperties().getProperty("SHEET_ID")||CFG.SHEET_ID;if(!id)throw Error("Jalankan setup() terlebih dahulu.");const sh=SpreadsheetApp.openById(id).getSheetByName(name);if(!sh)throw Error("Sheet "+name+" belum ada. Jalankan setup().");return sh;}
+function rows_(name){const sh=sheet_(name),v=sh.getDataRange().getValues();if(v.length<2)return [];const headers=v[0];return v.slice(1).filter(r=>r.some(c=>c!=="")).map(r=>{const o={};headers.forEach((h,i)=>o[h]=r[i] instanceof Date?r[i].toISOString():r[i]);return o;});}
+function append_(name,obj){const sh=sheet_(name),headers=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];sh.appendRow(headers.map(h=>obj[h]===undefined?"":obj[h]));}
+function update_(name,key,value,changes){const sh=sheet_(name),v=sh.getDataRange().getValues(),headers=v[0],col=headers.indexOf(key);if(col<0)return;for(let i=1;i<v.length;i++){if(String(v[i][col])===String(value)){Object.entries(changes).forEach(([k,val])=>{const c=headers.indexOf(k);if(c>=0)sh.getRange(i+1,c+1).setValue(val);});return;}}}
+function id_(){return Utilities.getUuid();}
+function hash_(s){const b=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(s),Utilities.Charset.UTF_8);return b.map(x=>("0"+((x+256)%256).toString(16)).slice(-2)).join("");}
+function bool_(v){return v===true||String(v).toLowerCase()==="true"||String(v)==="1";}
