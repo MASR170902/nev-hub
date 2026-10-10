@@ -1,5 +1,5 @@
 /* NEVHub GitHub Pages frontend. Configure GAS_URL in this file after deploying Code.gs. */
-const GAS_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_EXEC_URL_HERE";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwyZoBqd1eBuvCc8Q-EIHq3mBrs6rr6hCzypDhtAVSVHBDDc9xeBMDBICv-8oswEjUw-w/exec";
 const DB = { session: "nevhub_session" };
 const getSession=()=>{try{return JSON.parse(sessionStorage.getItem(DB.session)||"null")}catch{return null}};
 let current=getSession(), events=[], activeFilter="Semua", selectedEvent=null;

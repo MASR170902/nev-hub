@@ -1,5 +1,5 @@
 /* Admin frontend for NEVHub. Replace GAS_URL with deployed Apps Script /exec URL. */
-const GAS_URL="PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_EXEC_URL_HERE";
+const GAS_URL="https://script.google.com/macros/s/AKfycbwyZoBqd1eBuvCc8Q-EIHq3mBrs6rr6hCzypDhtAVSVHBDDc9xeBMDBICv-8oswEjUw-w/exec";
 let adminSession=sessionStorage.getItem("nevhub_admin_token")||"",events=[],users=[],apps=[];
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const date=s=>s?new Date(s+"T00:00:00").toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"}):"—";
