@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { Role, EventStatus } from "../src/common/enums";
@@ -18,6 +19,24 @@ async function main() {
     update: { passwordHash, role: Role.SUPER_ADMIN, active: true },
     create: { name, email, passwordHash, role: Role.SUPER_ADMIN },
   });
+
+  const legacyParticipantEmail = "peserta@nevhub.local";
+  if (email !== legacyParticipantEmail) {
+    const legacyParticipant = await prisma.user.findUnique({
+      where: { email: legacyParticipantEmail },
+      select: { id: true },
+    });
+    if (legacyParticipant) {
+      await prisma.user.update({
+        where: { id: legacyParticipant.id },
+        data: {
+          passwordHash: await bcrypt.hash(randomBytes(32).toString("base64url"), 12),
+          active: false,
+          tokenVersion: { increment: 1 },
+        },
+      });
+    }
+  }
 
   // Sample published Event
   const now = new Date();

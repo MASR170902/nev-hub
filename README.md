@@ -53,7 +53,7 @@ Perintah ini akan menjalankan server **Backend (NestJS)** dan **Frontend (Next.j
 
 ## 🔐 Akun & Password
 
-Akun Super Admin dibuat dari `BOOTSTRAP_ADMIN_EMAIL` dan `BOOTSTRAP_ADMIN_PASSWORD` di `.env`. Password di-hash menggunakan bcrypt sebelum disimpan. Tidak ada akun demo dengan password tetap; buat akun peserta melalui halaman registrasi.
+Akun Super Admin dibuat dari `BOOTSTRAP_ADMIN_EMAIL` dan `BOOTSTRAP_ADMIN_PASSWORD` di `.env`. Password di-hash menggunakan bcrypt sebelum disimpan. Tidak ada akun demo dengan password tetap; buat akun peserta melalui halaman registrasi. Seed juga menonaktifkan akun peserta demo lama yang mungkin masih ada di database lokal.
 
 ---
 
