@@ -40,3 +40,6 @@ Upload ulang `index.html`, `admin.html`, `styles.css`, `app.js`, `admin.js` ke G
 - Presensi (`attendanceCheckIn`) belum punya UI — jangan dipakai operasional.
 - JSONP mengirim data lewat URL: cukup untuk prototipe, belum untuk data/bukti pembayaran asli.
 - Sheets sebagai database: batasi akses spreadsheet & folder Drive hanya untuk pengelola.
+
+## Catatan poster
+Admin dapat memilih poster hingga **10 MB**. Browser mengompresnya otomatis menjadi ±240 KB (maks. 1600 px) sebelum diunggah, karena jalur upload JSONP tidak mampu mengirim file besar.
