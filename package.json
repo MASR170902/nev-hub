@@ -1,0 +1,35 @@
+{
+  "name": "nevhub",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "dotenv -e .env -- concurrently -n api,web -c red,white \"npm run start:dev -w @nevhub/api\" \"npm run dev -w @nevhub/web\"",
+    "build": "dotenv -e .env -- npm run build -w @nevhub/api && dotenv -e .env -- npm run build -w @nevhub/web",
+    "start": "dotenv -e .env -- concurrently -n api,web -c red,white \"npm run start -w @nevhub/api\" \"npm run start -w @nevhub/web\"",
+    "db:push": "dotenv -e .env -- prisma db push --schema apps/api/prisma/schema.prisma",
+    "db:generate": "dotenv -e .env -- prisma generate --schema apps/api/prisma/schema.prisma",
+    "db:migrate": "dotenv -e .env -- prisma db push --schema apps/api/prisma/schema.prisma",
+    "db:deploy": "dotenv -e .env -- prisma db push --schema apps/api/prisma/schema.prisma",
+    "db:seed": "dotenv -e .env -- npm run prisma:seed -w @nevhub/api",
+    "setup": "npm run db:push && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "dotenv-cli": "^8.0.0"
+  },
+  "overrides": {
+    "@nestjs/jwt": {
+      "@nestjs/common": "^12.1.2"
+    }
+  },
+  "allowScripts": {
+    "@nestjs/core@10.4.22": true,
+    "@prisma/client@5.22.0": true,
+    "prisma@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "bcrypt@6.0.0": true
+  }
+}

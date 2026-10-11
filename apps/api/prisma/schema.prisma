@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String                 @id @default(cuid())
+  name                 String
+  email                String                 @unique
+  passwordHash         String
+  role                 String                 @default("PARTICIPANT")
+  active               Boolean                @default(true)
+  tokenVersion         Int                    @default(0)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  registrations        Registration[]
+  attendanceMarked     Attendance[]           @relation("AttendanceMarker")
+  committeeAssignments CommitteeAssignment[]
+  certificates         Certificate[]
+  financeTransactions  FinanceTransaction[]   @relation("FinanceCreator")
+  notifications        Notification[]
+  auditLogs            AuditLog[]
+  settingsUpdated      SystemSetting[]
+}
+
+model Event {
+  id            String                 @id @default(cuid())
+  title         String
+  description   String
+  location      String
+  startsAt      DateTime
+  endsAt        DateTime
+  capacity      Int?
+  status        String                 @default("DRAFT")
+  rundown       String                 @default("[]")
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  registrations Registration[]
+  attendance    Attendance[]
+  committee     CommitteeAssignment[]
+  certificates  Certificate[]
+  finances      FinanceTransaction[]
+
+  @@index([status, startsAt])
+}
+
+model Registration {
+  id           String       @id @default(cuid())
+  eventId      String
+  userId       String
+  status       String       @default("PENDING")
+  note         String?
+  registeredAt DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance   Attendance?
+  certificate  Certificate?
+
+  @@unique([eventId, userId])
+  @@index([eventId, status])
+}
+
+model Attendance {
+  id             String       @id @default(cuid())
+  eventId        String
+  registrationId String       @unique
+  markedById     String
+  status         String       @default("PRESENT")
+  checkedInAt    DateTime     @default(now())
+  event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  markedBy       User         @relation("AttendanceMarker", fields: [markedById], references: [id])
+
+  @@index([eventId, checkedInAt])
+}
+
+model CommitteeAssignment {
+  id        String   @id @default(cuid())
+  eventId   String
+  userId    String
+  position  String
+  createdAt DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model Certificate {
+  id             String       @id @default(cuid())
+  eventId        String
+  registrationId String       @unique
+  userId         String
+  serialNumber   String       @unique
+  issuedAt       DateTime     @default(now())
+  event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model FinanceTransaction {
+  id          String   @id @default(cuid())
+  eventId     String?
+  createdById String
+  type        String
+  amount      Float
+  description String
+  reference   String?
+  occurredAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  event       Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  createdBy   User     @relation("FinanceCreator", fields: [createdById], references: [id])
+
+  @@index([occurredAt, type])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String?
+  title     String
+  message   String
+  channel   String    @default("IN_APP")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  details    String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt, actorId])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  updatedAt   DateTime @updatedAt
+  updatedById String
+  updatedBy   User     @relation(fields: [updatedById], references: [id])
+}

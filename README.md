@@ -1,81 +1,99 @@
-# NEVHub — Student Activities Portal
+# NEVHub — Activity Management Portal (Fullstack)
 
-Starter repository for **NEVHub**, a responsive student portal for Open Lab, Bootcamp, and Open Recruitment. Uses HTML/CSS/JavaScript for the separate student/admin frontends and Google Apps Script + Google Sheets for the backend.
+NEVHub adalah aplikasi fullstack internal untuk mengelola kegiatan organisasi dari perencanaan, pendaftaran, presensi, hingga sertifikat dan pelaporan.
 
-## Repository layout
+Aplikasi ini menggunakan arsitektur **Fullstack** yang simpel, ringan, dan **siap pakai tanpa perlu instalasi database server eksternal (zero configuration)**.
 
-- `index.html` — student portal: self-registration, NIM/password login, browse events, apply, history and approval letter/WhatsApp link.
-- `admin.html` — separate admin portal: create/edit/close events, dynamic requirements, review applications, export CSV, print recaps and view students.
-- `Code.gs` — Apps Script API and Google Sheets integration.
-- `assets/nev-logo.png` — official NEV logo used in both portals.
+---
 
-## Setup Google Sheets backend
+## 🛠️ Arsitektur & Teknologi
 
-1. Create a Google Spreadsheet, e.g. **NEVHub Database**. Copy the ID from its URL (`/spreadsheets/d/SPREADSHEET_ID/edit`).
-2. Open **Extensions → Apps Script** from the spreadsheet, then paste `Code.gs`.
-3. In **Project Settings → Script Properties**, add:
-   - `SPREADSHEET_ID` = spreadsheet ID
-   - `SESSION_SECRET` = long random secret (at least 32 characters)
-   - `ADMIN_EMAIL` = admin email address
-   - `ADMIN_PASSWORD_HASH` = SHA-256 hex of `admin-password|SESSION_SECRET`
-   - Optional `UPLOAD_FOLDER_ID` = private Google Drive folder ID for uploaded proof files
-4. To create the admin password hash, run this helper temporarily in Apps Script and inspect Logs, changing the password before running. **Remove this helper after setting the property.**
-   ```js
-   function generateAdminHashOnce() {
-     const secret = PropertiesService.getScriptProperties().getProperty('SESSION_SECRET');
-     const password = 'CHANGE-THIS-TO-A-STRONG-PASSWORD';
-     const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password + '|' + secret, Utilities.Charset.UTF_8);
-     const hex = bytes.map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
-     console.log(hex);
-   }
-   ```
-   Copy the log value into `ADMIN_PASSWORD_HASH`, then delete the helper and save.
-5. Run `setupDatabase()` once from the Apps Script editor and grant requested permissions (Sheets, Drive, email).
-6. **Deploy → New deployment → Web app**. Execute as **Me**. Set access to **Anyone** (or the most restrictive access compatible with your intended users). Copy the `/exec` URL.
-7. In both `index.html` and `admin.html`, replace `PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE` with the deployed `/exec` URL.
-8. Test by registering a dummy student, creating an event in `admin.html`, applying, and approving from the admin portal.
+| Bagian | Teknologi | Keterangan |
+| --- | --- | --- |
+| **Frontend** | Next.js 16 + React 19 + TypeScript | UI modern, responsif, cepat (Port `3000`) |
+| **Backend** | NestJS 12 + Express + TypeScript | REST API modular & terstruktur (Port `3001`) |
+| **Database** | SQLite + Prisma ORM | File database lokal (`dev.db`), mandiri tanpa PostgreSQL/Docker |
+| **Autentikasi** | JWT (JSON Web Token) + Bcrypt | Role-Based Access Control (RBAC) |
+| **Styling** | Custom CSS terpadu | Nuansa identitas hitam, putih, dan merah NEVHub |
 
-## Run locally
+---
 
-Open `index.html` and `admin.html` using a local static server or deploy both files to GitHub Pages. They share the same Apps Script backend URL. GitHub Pages serves static files only; the Apps Script Web App is the backend.
+## 🚀 Cara Menjalankan (Sangat Mudah & Simpel)
 
-## Dynamic event requirements
+Hanya membutuhkan **Node.js (versi 20+)** dan **npm**. Tidak perlu install PostgreSQL, Homebrew, atau Docker!
 
-In the admin event form, enter one requirement per line:
-
-```text
-Bukti foto|file|wajib
-Alasan mengikuti|textarea|wajib
-Pengalaman sebelumnya|text|opsional
-Pilihan divisi|select|wajib|Network,IoT,Software
-Jumlah pembayaran|number|opsional
+### 1. Masuk ke folder proyek
+Pastikan file konfigurasi `.env` sudah ada (file `.env` default sudah disiapkan otomatis):
+```sh
+cp .env.example .env   # (jika belum ada file .env)
 ```
 
-Supported types: `text`, `textarea`, `file`, `select`, `number`. File uploads accept images/PDF and are capped at 3 MB by the frontend.
-
-## Suggested GitHub repository
-
-Repository name: `nevhub-student-portal`
-
-```bash
-git init
-git add .
-git commit -m "Initial NEVHub student and admin portal"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/nevhub-student-portal.git
-git push -u origin main
+### 2. Setup Database & Akun Awal
+Cukup jalankan satu perintah:
+```sh
+npm run setup
 ```
+Perintah ini akan secara otomatis:
+- Menyiapkan database SQLite (`dev.db`)
+- Melakukan generate Prisma Client
+- Melakukan seeding akun awal (Super Admin & Peserta Demo) serta contoh agenda kegiatan
 
-Then enable **Settings → Pages → Deploy from a branch → `main` / root**. Keep the Apps Script backend deployed separately.
+### 3. Jalankan Aplikasi
+```sh
+npm run dev
+```
+Perintah ini akan menjalankan server **Backend (NestJS)** dan **Frontend (Next.js)** secara bersamaan:
+- **Frontend Web**: Buka di browser [http://localhost:3000](http://localhost:3000)
+- **Backend API**: Berjalan di [http://localhost:3001/api](http://localhost:3001/api)
+- **Health Check API**: [http://localhost:3001/api/health](http://localhost:3001/api/health)
 
-## Important security and production notes
+---
 
-This is a starter implementation, not a production-audited system. Before opening registration publicly:
-- Use a strong random `SESSION_SECRET` and strong admin password. Never commit secrets, spreadsheet IDs, or real student data to GitHub.
-- Google Apps Script web apps do not automatically provide a secure user identity just because a user types a Gmail address. Consider adding Google Identity Services / institutional OAuth and verify tokens server-side.
-- The example caches sessions for 6 hours. For a production deployment, add rate limiting, stronger session storage/rotation, audit logs, input validation, and CSRF/origin protections appropriate to the chosen hosting setup.
-- Drive links for submitted proof files should be restricted to authorized staff. Avoid `ANYONE_WITH_LINK` for sensitive student records; the approval letter is link-accessible in this starter and should be changed to a restricted access model for sensitive use.
-- Email sending depends on Apps Script authorization and recipient quotas. Check execution logs if email does not arrive.
-- The fee field is informational only; payment verification and payment gateway integration are not implemented.
-- Add a proper file review UI and configurable custom field validation before using it for a large cohort.
-- Student data is personal data. Limit admin access, publish a privacy notice, define retention/deletion policy, and obtain appropriate consent.
+## 🔑 Akun Login Demo
+
+Setelah menjalankan `npm run setup`, Anda dapat langsung login dengan akun berikut:
+
+### 1. Akun Super Admin (Akses Penuh Pengelolaan)
+- **Email**: `admin@nevhub.local`
+- **Password**: `[REDACTED]`
+- **Hak Akses**: Kelola agenda, review pendaftaran, presensi, sertifikat, manajemen user, keuangan, dan audit log.
+
+### 2. Akun Peserta / Mahasiswa (Portal Peserta)
+- **Email**: `peserta@nevhub.local`
+- **Password**: `[REDACTED]`
+- **Hak Akses**: Lihat katalog agenda, daftar kegiatan, cek status pendaftaran, dan cetak surat/sertifikat.
+
+---
+
+## 📋 Fitur Utama Sistem
+
+1. **Autentikasi & Akun**:
+   - Login JWT dengan masa berlaku sesi yang aman.
+   - Pergantian password dan reset password akun.
+   - Manajemen pengguna dan penugasan peran (Role).
+2. **Katalog Agenda & Acara**:
+   - Pembuatan dan pengelolaan kegiatan (Draft, Diterbitkan, Selesai, Dibatalkan).
+   - Rundown terstruktur, kuota pendaftaran, dan tanggal kegiatan.
+3. **Pendaftaran Kegiatan**:
+   - Pendaftaran mandiri oleh peserta.
+   - Review dan persetujuan oleh Admin Event.
+   - Surat persetujuan peserta yang dapat dicetak langsung.
+4. **Presensi & Check-in**:
+   - Pencatatan kehadiran peserta oleh petugas presensi.
+5. **Penerbitan Sertifikat**:
+   - Penerbitan nomor seri sertifikat untuk peserta kegiatan yang telah selesai.
+6. **Keuangan Organisasi**:
+   - Pencatatan arus transaksi pemasukan dan pengeluaran kegiatan.
+7. **Audit Log & Keamanan**:
+   - Pencatatan riwayat setiap tindakan administratif penting di sistem.
+
+---
+
+## 📦 Perintah NPM Tersedia
+
+- `npm run setup` — Inisialisasi database SQLite dan isi data awal (seed).
+- `npm run dev` — Menjalankan Frontend dan Backend dalam mode pengembangan.
+- `npm run build` — Melakukan kompilasi build produksi untuk backend dan frontend.
+- `npm run start` — Menjalankan aplikasi dalam mode produksi.
+- `npm run db:push` — Sinkronisasi skema Prisma ke database SQLite.
+- `npm run db:seed` — Mengisi ulang akun awal dan data demo.
