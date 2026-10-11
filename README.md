@@ -23,10 +23,12 @@ Aplikasi ini menggunakan arsitektur **Fullstack** yang simpel, ringan, dan **sia
 Hanya membutuhkan **Node.js (versi 20+)** dan **npm**. Tidak perlu install PostgreSQL, Homebrew, atau Docker!
 
 ### 1. Masuk ke folder proyek
-Pastikan file konfigurasi `.env` sudah ada (file `.env` default sudah disiapkan otomatis):
+Salin konfigurasi contoh, lalu isi `JWT_SECRET` dengan nilai acak minimal 32 karakter dan `BOOTSTRAP_ADMIN_PASSWORD` dengan password unik minimal 12 karakter. Jangan gunakan nilai contoh atau membagikan file `.env`.
 ```sh
-cp .env.example .env   # (jika belum ada file .env)
+cp .env.example .env   # jika file .env belum ada
+openssl rand -base64 32
 ```
+Gunakan hasil perintah `openssl` sebagai `JWT_SECRET`, lalu isi `BOOTSTRAP_ADMIN_PASSWORD` secara lokal.
 
 ### 2. Setup Database & Akun Awal
 Cukup jalankan satu perintah:
@@ -36,7 +38,7 @@ npm run setup
 Perintah ini akan secara otomatis:
 - Menyiapkan database SQLite (`dev.db`)
 - Melakukan generate Prisma Client
-- Melakukan seeding akun awal (Super Admin & Peserta Demo) serta contoh agenda kegiatan
+- Membuat akun Super Admin dari konfigurasi lokal serta contoh agenda kegiatan
 
 ### 3. Jalankan Aplikasi
 ```sh
@@ -49,19 +51,9 @@ Perintah ini akan menjalankan server **Backend (NestJS)** dan **Frontend (Next.j
 
 ---
 
-## 🔑 Akun Login Demo
+## 🔐 Akun & Password
 
-Setelah menjalankan `npm run setup`, Anda dapat langsung login dengan akun berikut:
-
-### 1. Akun Super Admin (Akses Penuh Pengelolaan)
-- **Email**: `admin@nevhub.local`
-- **Password**: `[REDACTED]`
-- **Hak Akses**: Kelola agenda, review pendaftaran, presensi, sertifikat, manajemen user, keuangan, dan audit log.
-
-### 2. Akun Peserta / Mahasiswa (Portal Peserta)
-- **Email**: `peserta@nevhub.local`
-- **Password**: `[REDACTED]`
-- **Hak Akses**: Lihat katalog agenda, daftar kegiatan, cek status pendaftaran, dan cetak surat/sertifikat.
+Akun Super Admin dibuat dari `BOOTSTRAP_ADMIN_EMAIL` dan `BOOTSTRAP_ADMIN_PASSWORD` di `.env`. Password di-hash menggunakan bcrypt sebelum disimpan. Tidak ada akun demo dengan password tetap; buat akun peserta melalui halaman registrasi.
 
 ---
 

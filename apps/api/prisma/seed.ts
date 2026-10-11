@@ -7,27 +7,16 @@ const prisma = new PrismaClient();
 async function main() {
   const name = process.env.BOOTSTRAP_ADMIN_NAME || "NEVHub Super Admin";
   const email = (process.env.BOOTSTRAP_ADMIN_EMAIL || "admin@nevhub.local").toLowerCase();
-  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD || "[REDACTED]";
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (!password || password.length < 12) {
+    throw new Error("BOOTSTRAP_ADMIN_PASSWORD must be set to a unique password with at least 12 characters.");
+  }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  const admin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email },
     update: { passwordHash, role: Role.SUPER_ADMIN, active: true },
     create: { name, email, passwordHash, role: Role.SUPER_ADMIN },
-  });
-
-  // Sample Participant account
-  const studentEmail = "peserta@nevhub.local";
-  const studentPassHash = await bcrypt.hash("[REDACTED]", 12);
-  await prisma.user.upsert({
-    where: { email: studentEmail },
-    update: { passwordHash: studentPassHash, role: Role.PARTICIPANT, active: true },
-    create: {
-      name: "Denis Mahasiswa",
-      email: studentEmail,
-      passwordHash: studentPassHash,
-      role: Role.PARTICIPANT,
-    },
   });
 
   // Sample published Event
@@ -56,9 +45,7 @@ async function main() {
     });
   }
 
-  console.log(`Seeding selesai:`);
-  console.log(`- Super Admin: ${email} (password: ${password})`);
-  console.log(`- Peserta Demo: ${studentEmail} (password: [REDACTED])`);
+  console.log(`Seeding selesai. Super Admin ${email} siap; password tersimpan sebagai hash bcrypt.`);
 }
 
 main()
