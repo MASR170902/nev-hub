@@ -1,64 +1,42 @@
-# NEVHub — GitHub Pages + Google Sheets
+# NEVHub — Panduan Setup & Uji Coba
 
-## Isi paket
-- `index.html`: portal mahasiswa
-- `admin.html`: dashboard admin terpisah
-- `styles.css`: tema merah, hitam, putih
-- `nev-logo.png`: logo asli NEV
-- `app.js`, `admin.js`: frontend yang memanggil Apps Script
-- `Code.gs`: backend Google Apps Script
-- `README-SETUP.md`: panduan deployment
+Frontend: GitHub Pages (`index.html`, `admin.html`, `styles.css`, `app.js`, `admin.js`, `nev-logo.png`).
+Backend: Google Apps Script (`Code.gs`) + Google Sheets + Google Drive.
+`GAS_URL` di `app.js` dan `admin.js` sudah berisi URL `/exec` Anda; ganti hanya jika membuat deployment baru.
 
-## A. Siapkan Google Sheets + Apps Script
-1. Login ke akun Google organisasi.
-2. Buka https://script.google.com dan buat project baru bernama `NEVHub Backend`.
-3. Ganti isi `Code.gs` dengan file `Code.gs` dari paket ini.
-4. Jalankan fungsi `setup()` dari editor. Berikan izin akses Sheets dan Drive. Lihat **Execution log** untuk URL spreadsheet yang dibuat.
-5. Jalankan fungsi `createAdmin("email-admin-anda@gmail.com","PASSWORD_MINIMAL_10_KARAKTER","Admin NEV")` dengan email/password milik Anda. Jalankan lagi untuk setiap admin; setiap admin punya akun sendiri.
-6. Di **Project Settings**, set timezone ke `Asia/Jakarta`.
-7. Deploy → New deployment → type **Web app**.
-   - Execute as: **Me**
-   - Who has access: **Anyone** (diperlukan agar GitHub Pages dapat memanggil endpoint; lindungi data lewat token dan jangan bagikan URL secara sembarang).
-   - Deploy, izinkan akses, salin URL yang berakhir `/exec`.
+## A. Update backend (data lama aman)
+1. Cadangkan spreadsheet NEVHub Database (File → Make a copy).
+2. Ganti seluruh isi `Code.gs` di Apps Script dengan file baru, lalu **Save**.
+3. Jalankan `setup()` sekali (menambah kolom + memformat kolom NIM/tanggal sebagai teks).
+4. Jalankan `authorizeAll()` sekali dan setujui semua izin (Drive, Gmail, Sheets).
+5. Deploy → Manage deployments → ✏️ Edit → Version: **New version** → Deploy. URL `/exec` tetap sama.
+6. Belum punya admin? Jalankan `createAdmin("email@anda","PasswordMin10Karakter","Admin NEV")`.
+   Lupa password admin? Jalankan `resetAdminPassword("email@anda","PasswordBaruMin10")`.
+7. Project Settings → Timezone: `Asia/Jakarta`.
 
-## B. Hubungkan frontend
-1. Buka `app.js`, ganti `PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_EXEC_URL_HERE` dengan URL `/exec`.
-2. Buka `admin.js`, ganti placeholder yang sama dengan URL `/exec`.
-3. Upload semua file frontend (`index.html`, `admin.html`, `styles.css`, `app.js`, `admin.js`, `nev-logo.png`) ke root repository GitHub.
-4. Pastikan nama halaman utama `index.html`, lalu buka repository → Settings → Pages → Deploy from a branch → `main` → `/ (root)` → Save.
-5. Tunggu GitHub Pages aktif. Buka URL Pages Anda. Google Apps Script URL harus tetap `/exec`.
+## B. Update frontend
+Upload ulang `index.html`, `admin.html`, `styles.css`, `app.js`, `admin.js` ke GitHub, lalu hard refresh (`Ctrl+Shift+R`).
 
-## C. Uji
-1. Buka portal user dan buat akun mahasiswa.
-2. Login dengan NIM dan password.
-3. Buka `admin.html`, login dengan akun admin yang dibuat pada langkah A.
-4. Buat kegiatan dan atur persyaratan.
-5. Daftar melalui portal user, lalu setujui melalui admin.
-6. Periksa Google Sheets untuk melihat baris Users, Events, Applications. Dokumen disimpan ke folder Drive `NEVHub Private Uploads`.
-7. Email persetujuan dikirim melalui GmailApp setelah admin menyetujui. Pada eksekusi pertama, Google dapat meminta otorisasi tambahan.
+## C. Skenario uji (gunakan data dummy)
+1. **Admin**: login di `admin.html` → Buat kegiatan (centang alasan + bukti foto; deadline ≥ hari ini; upload poster).
+2. **Portal user**: buat akun (NIM contoh `22100001`) → logout → login ulang. Kegiatan + poster tampil, "Sisa kuota" benar.
+3. Daftar kegiatan dengan foto besar (mis. 3 MB): file dikompres otomatis lalu diunggah bertahap (ada persentase).
+4. Tombol kegiatan berubah menjadi **Sudah terdaftar**; "Pendaftaran Saya" menampilkan status *Menunggu*.
+5. **Admin** → Riwayat pendaftaran → **Detail** → lihat bukti foto → **Setujui**. Email terkirim ke akun Google mahasiswa.
+6. **User**: status *Disetujui*, buka & cetak surat (hanya surat yang tercetak), tautan WhatsApp muncul.
+7. Admin hapus kegiatan → hilang dari daftar admin & portal. Admin ubah password mahasiswa → login dengan password baru.
+8. Cek Sheets: NIM tidak berubah jadi angka, tanggal tidak mundur sehari.
 
-## D. Catatan penting
-- Google Sheets adalah database prototype. Hindari data sangat sensitif; batasi akses spreadsheet dan folder Drive hanya kepada pengelola.
-- Frontend memakai JSONP untuk komunikasi lintas domain. Hindari mengirim data sensitif di URL. Token sesi diberikan oleh backend; tetap gunakan HTTPS.
-- Upload bukti masih prototipe: data file dikirim melalui endpoint JSONP, sehingga berkas besar dapat gagal karena batas URL. Untuk operasional, ubah upload menjadi alur POST yang aman atau gunakan form upload Apps Script/Drive; jangan gunakan bukti pembayaran sungguhan sebelum jalur upload diuji.
-- Presensi saat ini baru memiliki endpoint dasar (`attendanceCheckIn`); UI presensi/QR, pembuatan token kegiatan, dan pemindaian belum selesai. Jangan anggap modul presensi siap operasional.
-- Password di-hash SHA-256 untuk demo, tetapi untuk produksi sebaiknya gunakan layanan autentikasi yang dirancang khusus; jangan gunakan konfigurasi ini untuk data penting tanpa audit keamanan.
-- Apps Script memiliki kuota eksekusi dan Gmail. Gunakan akun organisasi dan tinjau kuota Google.
-- Bila mengubah `Code.gs`, Deploy → Manage deployments → Edit → Version: New version → Deploy. URL `/exec` umumnya tetap sama.
+## D. Perbaikan di versi ini
+- Upload bukti user kini **bertahap (chunk)** — sebelumnya dikirim dalam satu URL sehingga hampir pasti gagal.
+- NIM, tanggal, ID disimpan sebagai **teks** (mencegah NIM kehilangan angka 0 / login gagal, dan tanggal bergeser).
+- Query Sheets tidak lagi dibaca berulang per baris → dashboard dan "Pendaftaran Saya" jauh lebih cepat.
+- Kegiatan yang dihapus (Archived) tidak lagi tampil di admin; kuota terisi, deadline lewat, dan "sudah terdaftar" ditampilkan.
+- Password baru memakai hash ber-salt (hash lama otomatis di-upgrade saat login); batas 5 kali gagal login per 15 menit.
+- Token kedaluwarsa dibersihkan otomatis; sesi habis → logout otomatis; tombol Keluar mencabut token.
+- Admin dapat melihat detail & bukti unggahan; CSV aman dari formula injection; link WhatsApp wajib `https://`.
 
-
-## Update fitur (2026-10)
-- `setup()` melakukan migrasi kolom tambahan secara non-destruktif, termasuk `posterFileId` dan `posterUrl` pada sheet Events. Jalankan `setup()` setelah mengganti Code.gs agar kolom baru ditambahkan di ujung tanpa menghapus data lama.
-- Tanggal kegiatan dinormalisasi ke `YYYY-MM-DD` agar tidak lagi tampil `Invalid Date`. Data kegiatan lama yang tanggal/deadline-nya kosong harus diedit dan dilengkapi oleh admin. Deadline harus sama dengan atau sebelum tanggal kegiatan.
-- Admin dapat mengunggah poster JPG/PNG/WEBP; file poster dibuat dapat dilihat siapa pun yang memiliki tautan karena poster memang ditampilkan di portal publik. Jangan unggah materi privat.
-- User dapat mengunggah bukti foto/dokumen dan bukti pembayaran. Untuk prototype JSONP, file dibatasi 250 KB setelah kompres; gambar dikompres otomatis di browser. File bukti tetap privat di Drive.
-- Form login, pendaftaran, dan simpan kegiatan menampilkan spinner dan menonaktifkan tombol saat proses berjalan. Backend menggunakan `LockService` untuk mencegah pendaftaran NIM ganda dan aplikasi ganda.
-- Admin dapat mengubah password mahasiswa melalui daftar mahasiswa.
-- Jumlah kegiatan di dashboard user dihitung dari daftar kegiatan Published dan diperbarui setiap 30 detik.
-
-## Terapkan update dengan aman
-1. Cadangkan spreadsheet terlebih dahulu.
-2. Ganti `Code.gs` di Apps Script dengan versi dalam paket, simpan, lalu jalankan `setup()` satu kali untuk menambahkan kolom baru tanpa menghapus baris lama. Pastikan Script Properties `SHEET_ID` dan `UPLOAD_FOLDER_ID` tetap mengarah ke spreadsheet/folder yang sekarang.
-3. Deploy → Manage deployments → Edit → New version → Deploy. Pertahankan URL `/exec` yang sama.
-4. Ganti `app.js`, `admin.js`, `admin.html`, `index.html`, dan `styles.css` di GitHub dengan file dari paket.
-5. Hard refresh browser (`Ctrl+Shift+R`). Uji dengan data dummy sebelum dipakai mahasiswa.
+## E. Batasan yang masih ada
+- Presensi (`attendanceCheckIn`) belum punya UI — jangan dipakai operasional.
+- JSONP mengirim data lewat URL: cukup untuk prototipe, belum untuk data/bukti pembayaran asli.
+- Sheets sebagai database: batasi akses spreadsheet & folder Drive hanya untuk pengelola.

@@ -27,3 +27,7 @@
 
 /* NEVHub feature updates: loading, posters, and responsive upload controls */
 .spinner{display:inline-block;width:15px;height:15px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-3px;margin-right:9px;animation:nevSpin .7s linear infinite}@keyframes nevSpin{to{transform:rotate(360deg)}}button[aria-busy="true"]{opacity:.78;cursor:wait}.event-poster{display:block;width:100%;height:190px;object-fit:cover;background:#eee}.event-card .event-poster{border-bottom:1px solid var(--line)}#eventForm input[type=file]{padding:10px;background:#fff}.admin-card small.muted{display:block;font-weight:400;font-size:10px;line-height:1.5;margin-top:5px}
+
+/* Test-readiness additions */
+.detail-list{display:grid;grid-template-columns:110px 1fr;gap:8px 14px;margin:18px 0;font-size:12px}.detail-list dt{font-weight:700;color:#555}.detail-list dd{margin:0;word-break:break-word}#filePreview{margin-top:16px}#filePreview img{max-width:100%;border:1px solid var(--line);border-radius:10px}.btn[disabled]{opacity:.55;cursor:not-allowed;transform:none}
+@media print{body.user-body>*:not(.modal-backdrop){display:none!important}.modal-backdrop{position:static;background:none;padding:0}.modal{box-shadow:none;max-height:none}.modal-close,.modal .btn{display:none}}
