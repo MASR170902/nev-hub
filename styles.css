@@ -24,3 +24,6 @@
 #adminLogin h2{line-height:1.2}
 #adminLogin .muted{line-height:1.7}
 @media(max-width:650px){#adminLogin{width:100%;padding:25px 20px;margin:20px auto!important}}
+
+/* NEVHub feature updates: loading, posters, and responsive upload controls */
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-3px;margin-right:9px;animation:nevSpin .7s linear infinite}@keyframes nevSpin{to{transform:rotate(360deg)}}button[aria-busy="true"]{opacity:.78;cursor:wait}.event-poster{display:block;width:100%;height:190px;object-fit:cover;background:#eee}.event-card .event-poster{border-bottom:1px solid var(--line)}#eventForm input[type=file]{padding:10px;background:#fff}.admin-card small.muted{display:block;font-weight:400;font-size:10px;line-height:1.5;margin-top:5px}

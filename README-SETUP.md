@@ -45,3 +45,20 @@
 - Password di-hash SHA-256 untuk demo, tetapi untuk produksi sebaiknya gunakan layanan autentikasi yang dirancang khusus; jangan gunakan konfigurasi ini untuk data penting tanpa audit keamanan.
 - Apps Script memiliki kuota eksekusi dan Gmail. Gunakan akun organisasi dan tinjau kuota Google.
 - Bila mengubah `Code.gs`, Deploy → Manage deployments → Edit → Version: New version → Deploy. URL `/exec` umumnya tetap sama.
+
+
+## Update fitur (2026-10)
+- `setup()` melakukan migrasi kolom tambahan secara non-destruktif, termasuk `posterFileId` dan `posterUrl` pada sheet Events. Jalankan `setup()` setelah mengganti Code.gs agar kolom baru ditambahkan di ujung tanpa menghapus data lama.
+- Tanggal kegiatan dinormalisasi ke `YYYY-MM-DD` agar tidak lagi tampil `Invalid Date`. Data kegiatan lama yang tanggal/deadline-nya kosong harus diedit dan dilengkapi oleh admin. Deadline harus sama dengan atau sebelum tanggal kegiatan.
+- Admin dapat mengunggah poster JPG/PNG/WEBP; file poster dibuat dapat dilihat siapa pun yang memiliki tautan karena poster memang ditampilkan di portal publik. Jangan unggah materi privat.
+- User dapat mengunggah bukti foto/dokumen dan bukti pembayaran. Untuk prototype JSONP, file dibatasi 250 KB setelah kompres; gambar dikompres otomatis di browser. File bukti tetap privat di Drive.
+- Form login, pendaftaran, dan simpan kegiatan menampilkan spinner dan menonaktifkan tombol saat proses berjalan. Backend menggunakan `LockService` untuk mencegah pendaftaran NIM ganda dan aplikasi ganda.
+- Admin dapat mengubah password mahasiswa melalui daftar mahasiswa.
+- Jumlah kegiatan di dashboard user dihitung dari daftar kegiatan Published dan diperbarui setiap 30 detik.
+
+## Terapkan update dengan aman
+1. Cadangkan spreadsheet terlebih dahulu.
+2. Ganti `Code.gs` di Apps Script dengan versi dalam paket, simpan, lalu jalankan `setup()` satu kali untuk menambahkan kolom baru tanpa menghapus baris lama. Pastikan Script Properties `SHEET_ID` dan `UPLOAD_FOLDER_ID` tetap mengarah ke spreadsheet/folder yang sekarang.
+3. Deploy → Manage deployments → Edit → New version → Deploy. Pertahankan URL `/exec` yang sama.
+4. Ganti `app.js`, `admin.js`, `admin.html`, `index.html`, dan `styles.css` di GitHub dengan file dari paket.
+5. Hard refresh browser (`Ctrl+Shift+R`). Uji dengan data dummy sebelum dipakai mahasiswa.
